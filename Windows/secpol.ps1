@@ -1,60 +1,42 @@
-# PowerShell script to enforce secure password policies, account lockout policies, and auditing
+# Ensure you run the script as an administrator
 
-# Define password policy settings
-$minPasswordLength = 12
-$maxPasswordAgeDays = 60
-$minPasswordAgeDays = 1
-$lockoutThreshold = 5
-$lockoutDurationMinutes = 15
-$lockoutResetMinutes = 15
+# Define password policies
+Set-LocalUser -Name "Administrator" -PasswordNeverExpires $false
 
-# Function to set password policy
-function Set-PasswordPolicy {
-    Write-Host "Setting password policies..."
+# Set password policy settings
+secedit /export /cfg "C:\secedit.cfg"
+(Get-Content "C:\secedit.cfg") -replace 'PasswordHistorySize=.*', 'PasswordHistorySize=10' |
+    ForEach-Object { $_ -replace 'MaximumPasswordAge=.*', 'MaximumPasswordAge=30' } |
+    ForEach-Object { $_ -replace 'MinimumPasswordAge=.*', 'MinimumPasswordAge=10' } |
+    ForEach-Object { $_ -replace 'MinimumPasswordLength=.*', 'MinimumPasswordLength=14' } |
+    ForEach-Object { $_ -replace 'PasswordComplexity=.*', 'PasswordComplexity=1' } |
+    Set-Content "C:\secedit.cfg"
+secedit /import /cfg "C:\secedit.cfg" /areas securitypolicy
 
-    # Set minimum password length
-    net accounts /minpwlen:$minPasswordLength
-    # Set maximum password age
-    net accounts /maxpwage:$maxPasswordAgeDays
-    # Set minimum password age
-    net accounts /minpwage:$minPasswordAgeDays
-    
-    # Set password complexity
-    $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
-    Set-ItemProperty -Path $regPath -Name "PasswordComplexity" -Value 1
-    Set-ItemProperty -Path $regPath -Name "MinimumPasswordLength" -Value $minPasswordLength
-}
+# Set account lockout policy settings
+secedit /export /cfg "C:\secedit.cfg"
+(Get-Content "C:\secedit.cfg") -replace 'LockoutBadCount=.*', 'LockoutBadCount=5' |
+    ForEach-Object { $_ -replace 'LockoutDuration=.*', 'LockoutDuration=30' } |
+    ForEach-Object { $_ -replace 'ResetLockoutCount=.*', 'ResetLockoutCount=30' } |
+    Set-Content "C:\secedit.cfg"
+secedit /import /cfg "C:\secedit.cfg" /areas securitypolicy
 
-# Function to set account lockout policy
-function Set-LockoutPolicy {
-    Write-Host "Setting account lockout policies..."
-    
-    # Use secedit to configure lockout settings
-    $seceditConfig = @"
-[System]
-LockoutBadCount = $lockoutThreshold
-LockoutDuration = $lockoutDurationMinutes
-ResetLockoutCount = $lockoutResetMinutes
-"@
-    
-    # Export current security policy
-    $seceditPath = "C:\Windows\Temp\secpol.cfg"
-    $seceditConfig | Set-Content -Path $seceditPath
-    secedit /import /cfg $seceditPath /areas SECURITYPOLICY
-    Remove-Item $seceditPath
-}
+# Set audit policy
+auditpol /set /subcategory:"Logon/Logoff" /success:enable /failure:enable
+auditpol /set /subcategory:"Account Logon" /success:enable /failure:enable
+auditpol /set /subcategory:"Account Management" /success:enable /failure:enable
+auditpol /set /subcategory:"Directory Service Access" /success:enable /failure:enable
+auditpol /set /subcategory:"Policy Change" /success:enable /failure:enable
+auditpol /set /subcategory:"Privilege Use" /success:enable /failure:enable
+auditpol /set /subcategory:"System" /success:enable /failure:enable
 
-# Function to enable auditing
-function Enable-Auditing {
-    Write-Host "Enabling auditing for account logon events..."
-    
-    # Enable auditing for logon events
-    auditpol /set /subcategory:"Logon" /success:enable /failure:enable
-}
+# Set security options
+secedit /export /cfg "C:\secedit.cfg"
+(Get-Content "C:\secedit.cfg") -replace 'LimitBlankPasswordUse=.*', 'LimitBlankPasswordUse=1' |
+    Set-Content "C:\secedit.cfg"
+secedit /import /cfg "C:\secedit.cfg" /areas securitypolicy
 
-# Run functions
-Set-PasswordPolicy
-Set-LockoutPolicy
-Enable-Auditing
+# Clean up
+Remove-Item "C:\secedit.cfg"
 
-Write-Host "Security policies have been updated."
+Write-Host "Password policies, account lockout policies, audit policies, and security options have been configured."
